@@ -8,8 +8,11 @@ import android.app.Fragment;
 import android.app.FragmentManager;
 import android.app.FragmentTransaction;
 import android.bluetooth.BluetoothAdapter;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -19,11 +22,16 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import com.home_automation.app.R;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 public class BluetoothActivity extends Activity
 {
+    public BluetoothActivity()
+    {
+        m_btReceiver = new BluetoothStateChangeReceiver();
+    }
+
     public static class PlaceholderFragment extends Fragment
     {
         @Override
@@ -115,9 +123,23 @@ public class BluetoothActivity extends Activity
             }
             else
             {
-                showContainerFragment(new PlaceholderFragment(), HOME_FRAGMENT_TAG);
+                showContainerFragment(HOME_FRAGMENT_TAG);
             }
         }
+    }
+
+    @Override
+    protected void onResume()
+    {
+        super.onResume();
+        registerReceiver(m_btReceiver, BLUETOOTH_INTENT_FILTER);
+    }
+
+    @Override
+    protected void onPause()
+    {
+        super.onPause();
+        unregisterReceiver(m_btReceiver);
     }
 
     @Override
@@ -158,25 +180,35 @@ public class BluetoothActivity extends Activity
         {
         case RESULT_OK:
             Logger.log(this, "Bluetooth was successfully activated");
-            showContainerFragment(new PlaceholderFragment(), HOME_FRAGMENT_TAG);
+            showContainerFragment(HOME_FRAGMENT_TAG);
             break;
         case RESULT_CANCELED:
             Logger.log(this, "Bluetooth failed to be activated");
-            showContainerFragment(new BluetoothNotEnabledFragment(), NO_BLUETOOTH_FRAGMENT_TAG);
+            showContainerFragment(NO_BLUETOOTH_FRAGMENT_TAG);
             break;
         default:
             Logger.log(this, "Unknown result code %d", resultCode);
         }
     }
 
-    private void showContainerFragment(Fragment frag, String tag)
+    private void showContainerFragment(String tag)
     {
         // first check if the fragment is already being show and if not, clear all fragments and show fragment
         FragmentManager fragMan = getFragmentManager();
         if (fragMan.findFragmentByTag(tag) == null)
         {
             clearFragments();
-            getFragmentManager().beginTransaction().add(R.id.container, frag, tag).commit();
+            Class fragClass = FRAGMENT_CLASSES.get(tag);
+            try
+            {
+                getFragmentManager().beginTransaction().add(R.id.container,
+                                                            (Fragment) fragClass.newInstance(),
+                                                            tag).commit();
+            }
+            catch (Exception e)
+            {
+                Logger.log(this, "Failed to create instantiation of fragment %s", fragClass.getSimpleName());
+            }
         }
     }
 
@@ -184,7 +216,7 @@ public class BluetoothActivity extends Activity
     {
         FragmentManager fragManager = getFragmentManager();
         FragmentTransaction transaction = fragManager.beginTransaction();
-        for (String fragTag : FRAGMENT_TAGS)
+        for (String fragTag : FRAGMENT_CLASSES.keySet())
         {
             Fragment frag = fragManager.findFragmentByTag(fragTag);
             if (frag != null)
@@ -193,6 +225,29 @@ public class BluetoothActivity extends Activity
             }
         }
         transaction.commit();
+    }
+
+    private class BluetoothStateChangeReceiver extends BroadcastReceiver
+    {
+        @Override
+        public void onReceive(Context context, Intent intent)
+        {
+            int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, UNKNOWN_STATE);
+            Logger.log(this, "Received intent %s with state %d", intent, state);
+            switch (state)
+            {
+            case BluetoothAdapter.STATE_ON:
+                Logger.log(this, "Bluetooth has been connected");
+                showContainerFragment(HOME_FRAGMENT_TAG);
+                break;
+            case BluetoothAdapter.STATE_OFF:
+                Logger.log(this, "Bluetooth has been disconnected");
+                showContainerFragment(NO_BLUETOOTH_FRAGMENT_TAG);
+                break;
+            }
+        }
+
+        private static final int UNKNOWN_STATE = -1;
     }
 
     private static void requestEnableBluetooth(Activity activity)
@@ -209,15 +264,18 @@ public class BluetoothActivity extends Activity
         activity.startActivity(intent);
     }
 
-    private static final int          REQUEST_ENABLE_BT         = 0;
-    private static final String       HOME_FRAGMENT_TAG         = "home_fragment";
-    private static final String       NO_BLUETOOTH_FRAGMENT_TAG = "no_bluetooth_fragment";
-    private static final List<String> FRAGMENT_TAGS             = new ArrayList<String>(2);
+    private static final IntentFilter       BLUETOOTH_INTENT_FILTER   = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+    private static final int                REQUEST_ENABLE_BT         = 0;
+    private static final Map<String, Class> FRAGMENT_CLASSES          = new HashMap<String, Class>();
+    private static final String             HOME_FRAGMENT_TAG         = "home_fragment";
+    private static final String             NO_BLUETOOTH_FRAGMENT_TAG = "no_bluetooth_fragment";
+
     static
     {
-        FRAGMENT_TAGS.add(HOME_FRAGMENT_TAG);
-        FRAGMENT_TAGS.add(NO_BLUETOOTH_FRAGMENT_TAG);
+        FRAGMENT_CLASSES.put(HOME_FRAGMENT_TAG, PlaceholderFragment.class);
+        FRAGMENT_CLASSES.put(NO_BLUETOOTH_FRAGMENT_TAG, BluetoothNotEnabledFragment.class);
     }
 
-    private BluetoothAdapter m_btAdapter;
+    private final BluetoothStateChangeReceiver m_btReceiver;
+    private       BluetoothAdapter             m_btAdapter;
 }
