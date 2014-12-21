@@ -3,6 +3,7 @@
           package="com.home_automation.app">
 
     <uses-permission android:name="android.permission.BLUETOOTH"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
 
     <application
             android:allowBackup="true"

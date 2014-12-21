@@ -8,21 +8,27 @@ import android.app.Fragment;
 import android.app.FragmentManager;
 import android.app.FragmentTransaction;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.os.Bundle;
+import android.os.*;
+import android.os.Process;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ListView;
 import com.home_automation.app.R;
 
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 
 public class BluetoothActivity extends Activity
@@ -32,14 +38,104 @@ public class BluetoothActivity extends Activity
         m_btReceiver = new BluetoothStateChangeReceiver();
     }
 
-    public static class PlaceholderFragment extends Fragment
+    public static class BluetoothDeviceNamesFragment extends Fragment
     {
+        public BluetoothDeviceNamesFragment()
+        {
+            m_btDeviceNames = new LinkedList<String>();
+            m_deviceScanCallback = new BluetoothCommunicator.DeviceScanCallback()
+            {
+                @Override
+                public void onDeviceDiscovered(BluetoothDevice device)
+                {
+                    m_btDeviceNames.add(deviceToString(device));
+                    getActivity().runOnUiThread(new Runnable()
+                    {
+                        @Override
+                        public void run()
+                        {
+                            m_deviceNamesAdapter.notifyDataSetChanged();
+                        }
+                    });
+                }
+
+                @Override
+                public void onScanFinished()
+                {
+                    m_refreshButton.setEnabled(true);
+                }
+            };
+        }
+
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container,
                                  Bundle savedInstanceState)
         {
-            return inflater.inflate(R.layout.fragment_bluetooth_communicator, container, false);
+            View view = inflater.inflate(R.layout.fragment_bluetooth_communicator, container, false);
+            ListView deviceNameList = (ListView) view.findViewById(R.id.bt_device_names);
+            m_deviceNamesAdapter = new ArrayAdapter<String>(getActivity(),
+                                                            android.R.layout.simple_list_item_1,
+                                                            m_btDeviceNames);
+            deviceNameList.setAdapter(m_deviceNamesAdapter);
+
+            m_refreshButton = (Button) view.findViewById(R.id.refresh_button);
+            m_refreshButton.setOnClickListener(getRefreshButtonOnClickListener());
+
+            Button exitButton = (Button) view.findViewById(R.id.exit_button);
+            exitButton.setOnClickListener(getExitOnClickListener());
+
+            return view;
         }
+
+        @Override
+        public void onResume()
+        {
+            super.onResume();
+            BluetoothCommunicator.getInstance(getActivity()).scanForDevices(m_deviceScanCallback);
+        }
+
+        @Override
+        public void onPause()
+        {
+            super.onPause();
+            BluetoothCommunicator.getInstance(getActivity()).cancelScan();
+        }
+
+        private View.OnClickListener getRefreshButtonOnClickListener()
+        {
+            return new View.OnClickListener()
+            {
+                @Override
+                public void onClick(View v)
+                {
+                    m_refreshButton.setEnabled(false);
+                    m_btDeviceNames.clear();
+                    BluetoothCommunicator.getInstance(getActivity()).scanForDevices(m_deviceScanCallback);
+                }
+            };
+        }
+
+        private View.OnClickListener getExitOnClickListener()
+        {
+            return new View.OnClickListener()
+            {
+                @Override
+                public void onClick(View v)
+                {
+                    android.os.Process.killProcess(Process.myPid());
+                }
+            };
+        }
+
+        private static String deviceToString(BluetoothDevice device)
+        {
+            return String.format("Name(%s) Address(%s)", device.getName(), device.getAddress());
+        }
+
+        private final List<String>                             m_btDeviceNames;
+        private final BluetoothCommunicator.DeviceScanCallback m_deviceScanCallback;
+        private       ArrayAdapter<String>                     m_deviceNamesAdapter;
+        private       Button                                   m_refreshButton;
     }
 
     public static class BluetoothNotSupportedDialog extends DialogFragment
@@ -101,6 +197,7 @@ public class BluetoothActivity extends Activity
     {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_bluetooth_communicator);
+        m_btCommunicator = BluetoothCommunicator.getInstance(this);
     }
 
     @Override
@@ -109,15 +206,14 @@ public class BluetoothActivity extends Activity
         super.onStart();
 
         // check if bluetooth hardware is available
-        m_btAdapter = BluetoothAdapter.getDefaultAdapter();
-        if (m_btAdapter == null)
+        if (!m_btCommunicator.isBluetoothSupported())
         {
             new BluetoothNotSupportedDialog().show(getFragmentManager(), null);
         }
         else
         {
             // check if bluetooth is on
-            if (!m_btAdapter.isEnabled())
+            if (!m_btCommunicator.isBluetoothEnabled())
             {
                 requestEnableBluetooth(this);
             }
@@ -272,10 +368,10 @@ public class BluetoothActivity extends Activity
 
     static
     {
-        FRAGMENT_CLASSES.put(HOME_FRAGMENT_TAG, PlaceholderFragment.class);
+        FRAGMENT_CLASSES.put(HOME_FRAGMENT_TAG, BluetoothDeviceNamesFragment.class);
         FRAGMENT_CLASSES.put(NO_BLUETOOTH_FRAGMENT_TAG, BluetoothNotEnabledFragment.class);
     }
 
     private final BluetoothStateChangeReceiver m_btReceiver;
-    private       BluetoothAdapter             m_btAdapter;
+    private       BluetoothCommunicator        m_btCommunicator;
 }
