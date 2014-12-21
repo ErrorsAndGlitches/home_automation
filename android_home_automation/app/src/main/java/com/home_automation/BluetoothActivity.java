@@ -16,6 +16,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import com.home_automation.app.R;
 
 import java.util.ArrayList;
@@ -35,12 +36,6 @@ public class BluetoothActivity extends Activity
 
     public static class BluetoothNotSupportedDialog extends DialogFragment
     {
-        BluetoothNotSupportedDialog(Activity activity)
-        {
-            super();
-            m_activity = activity;
-        }
-
         @Override
         public Dialog onCreateDialog(Bundle savedInstanceState)
         {
@@ -57,15 +52,13 @@ public class BluetoothActivity extends Activity
                 @Override
                 public void onClick(DialogInterface dialog, int which)
                 {
-                    goToHome(m_activity);
+                    goToHome(getActivity());
                 }
             };
         }
 
         private static final String MESSAGE = "Bluetooth is not supported on this device. Exiting...";
         private static final String OKAY    = "OK";
-
-        private final Activity m_activity;
     }
 
     public static class BluetoothNotEnabledFragment extends Fragment
@@ -74,7 +67,24 @@ public class BluetoothActivity extends Activity
         public View onCreateView(LayoutInflater inflater, ViewGroup container,
                                  Bundle savedInstanceState)
         {
-            return inflater.inflate(R.layout.fragment_bluetooth_not_available, container, false);
+            View view = inflater.inflate(R.layout.fragment_bluetooth_not_available, container, false);
+
+            Button enableBluetoothButton = (Button) view.findViewById(R.id.enable_bt_button);
+            enableBluetoothButton.setOnClickListener(getEnableBtOnClickListener());
+
+            return view;
+        }
+
+        private View.OnClickListener getEnableBtOnClickListener()
+        {
+            return new View.OnClickListener()
+            {
+                @Override
+                public void onClick(View v)
+                {
+                    requestEnableBluetooth(getActivity());
+                }
+            };
         }
     }
 
@@ -94,15 +104,14 @@ public class BluetoothActivity extends Activity
         m_btAdapter = BluetoothAdapter.getDefaultAdapter();
         if (m_btAdapter == null)
         {
-            new BluetoothNotSupportedDialog(this).show(getFragmentManager(), null);
+            new BluetoothNotSupportedDialog().show(getFragmentManager(), null);
         }
         else
         {
             // check if bluetooth is on
             if (!m_btAdapter.isEnabled())
             {
-                Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+                requestEnableBluetooth(this);
             }
             else
             {
@@ -162,8 +171,13 @@ public class BluetoothActivity extends Activity
 
     private void showContainerFragment(Fragment frag, String tag)
     {
-        clearFragments();
-        getFragmentManager().beginTransaction().add(R.id.container, frag, tag).commit();
+        // first check if the fragment is already being show and if not, clear all fragments and show fragment
+        FragmentManager fragMan = getFragmentManager();
+        if (fragMan.findFragmentByTag(tag) == null)
+        {
+            clearFragments();
+            getFragmentManager().beginTransaction().add(R.id.container, frag, tag).commit();
+        }
     }
 
     private void clearFragments()
@@ -179,6 +193,12 @@ public class BluetoothActivity extends Activity
             }
         }
         transaction.commit();
+    }
+
+    private static void requestEnableBluetooth(Activity activity)
+    {
+        Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+        activity.startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
     }
 
     private static void goToHome(Activity activity)
